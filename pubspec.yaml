@@ -39,6 +39,9 @@ dependencies:
   # Image Cropping
   image_cropper: ^8.0.2
 
+  # Provider Package
+  provider: ^6.0.5
+
 
 
 

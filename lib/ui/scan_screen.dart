@@ -4,6 +4,9 @@ import 'package:image_picker/image_picker.dart';
 import 'package:image_cropper/image_cropper.dart';
 import 'package:google_mlkit_text_recognition/google_mlkit_text_recognition.dart';
 import 'package:hive/hive.dart';
+import 'package:knights_journal/ui/replay_screen.dart';
+
+
 
 class ScanScreen extends StatefulWidget {
   const ScanScreen({super.key});
@@ -18,6 +21,46 @@ class _ScanScreenState extends State<ScanScreen> {
   final List<Map<String, String>> _moves = [];
   bool _isLoading = false;
 
+  /// ---------------------------------------
+  /// NEW: Convert white/black rows → SAN list
+  /// ---------------------------------------
+  List<String> _flattenMovesToSan() {
+    List<String> san = [];
+    for (var m in _moves) {
+      if ((m["white"] ?? "").isNotEmpty) san.add(m["white"]!.trim());
+      if ((m["black"] ?? "").isNotEmpty) san.add(m["black"]!.trim());
+    }
+    return san;
+  }
+
+  /// ---------------------------------------
+  /// Move validation
+  /// ---------------------------------------
+  bool _isValidMove(String move) {
+    final s = move.trim();
+    if (s.isEmpty) return false;
+
+    String m = s.replaceAll('0-0-0', 'O-O-O').replaceAll('0-0', 'O-O');
+    m = m.replaceAll('o-o-o', 'O-O-O').replaceAll('o-o', 'O-O');
+    m = m.replaceAll('0', 'O');
+    m = m.replaceAll(RegExp(r'\s+'), '');
+
+    final regex = RegExp(
+      r'^('
+      r'O-O(-O)?'
+      r'|[KQRBN]?[a-h]?[1-8]?x?[a-h][1-8](=[QRBN])?'
+      r'|[a-h]x[a-h][1-8](=[QRBN])?'
+      r'|[a-h][1-8]'
+      r')[\+#]?$',
+      caseSensitive: false,
+    );
+
+    return regex.hasMatch(m);
+  }
+
+  /// ---------------------------------------
+  /// Image picking / cropping
+  /// ---------------------------------------
   Future<void> _showImagePicker({bool append = false}) async {
     showModalBottomSheet(
       context: context,
@@ -53,12 +96,11 @@ class _ScanScreenState extends State<ScanScreen> {
   }
 
   Future<void> _captureImage({bool append = false}) async {
-      try {
-        final picked = await _picker.pickImage(source: ImageSource.camera);
-        if (picked == null) return;
+    try {
+      final picked = await _picker.pickImage(source: ImageSource.camera);
+      if (picked == null) return;
 
-        // Optional crop before OCR
-        final cropped = await ImageCropper().cropImage(
+      final cropped = await ImageCropper().cropImage(
         sourcePath: picked.path,
         compressQuality: 95,
         uiSettings: [
@@ -72,27 +114,26 @@ class _ScanScreenState extends State<ScanScreen> {
 
       File file;
       if (cropped != null) {
-        // 🔧 Create a safe copy in your app's directory for MLKit
-        final newPath = '${Directory.systemTemp.path}/${DateTime.now().millisecondsSinceEpoch}.jpg';
+        final newPath =
+            '${Directory.systemTemp.path}/${DateTime.now().millisecondsSinceEpoch}.jpg';
         final newFile = await File(cropped.path).copy(newPath);
         file = newFile;
       } else {
         file = File(picked.path);
       }
 
+      if (!append) _selectedImages.clear();
+      _selectedImages.add(file);
 
-        if (!append) _selectedImages.clear();
-        _selectedImages.add(file);
-
-        setState(() => _isLoading = true);
-        await _processOCR();
-      } catch (e) {
-        debugPrint("Camera error: $e");
-        setState(() => _isLoading = false);
-      }
+      setState(() => _isLoading = true);
+      await _processOCR();
+    } catch (e) {
+      debugPrint("Camera error: $e");
+      setState(() => _isLoading = false);
     }
+  }
 
-    Future<void> _pickFromGallery({bool append = false}) async {
+  Future<void> _pickFromGallery({bool append = false}) async {
     try {
       final files = await _picker.pickMultiImage();
       if (files.isEmpty) return;
@@ -100,7 +141,6 @@ class _ScanScreenState extends State<ScanScreen> {
       if (!append) _selectedImages.clear();
 
       for (final image in files) {
-        // Optional: crop each image before OCR
         final cropped = await ImageCropper().cropImage(
           sourcePath: image.path,
           compressQuality: 95,
@@ -115,7 +155,8 @@ class _ScanScreenState extends State<ScanScreen> {
 
         File file;
         if (cropped != null) {
-          final newPath = '${Directory.systemTemp.path}/${DateTime.now().millisecondsSinceEpoch}.jpg';
+          final newPath =
+              '${Directory.systemTemp.path}/${DateTime.now().millisecondsSinceEpoch}.jpg';
           file = await File(cropped.path).copy(newPath);
         } else {
           file = File(image.path);
@@ -128,10 +169,13 @@ class _ScanScreenState extends State<ScanScreen> {
       await _processOCR();
     } catch (e) {
       debugPrint("Gallery error: $e");
+      setState(() => _isLoading = false);
     }
   }
 
-
+  /// ---------------------------------------
+  /// OCR processing + parsing
+  /// ---------------------------------------
   Future<void> _processOCR() async {
     setState(() => _isLoading = true);
 
@@ -148,9 +192,10 @@ class _ScanScreenState extends State<ScanScreen> {
         final text = recognized.text.replaceAll('\r', ' ');
         final tokens = text
             .split(RegExp(r'\s+'))
-            .whereType<String>()
             .where((t) => t.trim().isNotEmpty)
-            .map((t) => t.replaceAll(RegExp(r'[^\wO0\-\+\#=]'), ''))
+            .map((t) =>
+                t.replaceAll(RegExp(r'[^\wO0\-\+\#=\.]'), ''))
+            .where((t) => t.trim().isNotEmpty)
             .toList();
 
         allTokens.addAll(tokens);
@@ -161,43 +206,52 @@ class _ScanScreenState extends State<ScanScreen> {
       if (allTokens.isEmpty) {
         setState(() => _isLoading = false);
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text("No text detected. Try cropping or clearer image.")),
+          const SnackBar(
+              content:
+                  Text("No text detected. Try cropping or clearer image.")),
         );
         return;
       }
 
-      // 🔧 Smart alignment: detect if OCR listed all whites first, then blacks
       int mid = (allTokens.length / 2).floor();
       bool looksLikeStacked = false;
 
-      // If first half are all valid chess moves and second half are too → likely vertical layout
-      final movePattern = RegExp(r'^[KQRBN]?[a-h]?[1-8]?[x\-]?[a-h][1-8](=?[QRBN])?[\+#]?$|^O-?O(-?O)?$',
+      final movePattern = RegExp(
+          r'^[KQRBN]?[a-h]?[1-8]?[x\-]?[a-h][1-8](=?[QRBN])?[\+#]?$|^O-?O(-?O)?$',
           caseSensitive: false);
-      int valid1 = allTokens.take(mid).where((m) => movePattern.hasMatch(m)).length;
-      int valid2 = allTokens.skip(mid).where((m) => movePattern.hasMatch(m)).length;
+
+      int valid1 =
+          allTokens.take(mid).where((m) => movePattern.hasMatch(m)).length;
+      int valid2 =
+          allTokens.skip(mid).where((m) => movePattern.hasMatch(m)).length;
 
       if (valid1 > 1 && valid2 > 1) looksLikeStacked = true;
 
       List<Map<String, String>> parsed = [];
 
       if (looksLikeStacked) {
-        // e.g. [e4, Nf3, Bb6, e5, Nc6, a6]
-        // → Pair top half vs bottom half
         final whiteMoves = allTokens.take(mid).toList();
         final blackMoves = allTokens.skip(mid).toList();
 
         for (int i = 0; i < whiteMoves.length; i++) {
+          final w = whiteMoves[i];
+          final b = i < blackMoves.length ? blackMoves[i] : "";
           parsed.add({
-            "white": whiteMoves[i],
-            "black": i < blackMoves.length ? blackMoves[i] : "",
+            "white": w,
+            "black": b,
+            "white_valid": _isValidMove(w).toString(),
+            "black_valid": _isValidMove(b).toString(),
           });
         }
       } else {
-        // Default sequential pairing
         for (int i = 0; i < allTokens.length; i += 2) {
+          final w = allTokens[i];
+          final b = (i + 1 < allTokens.length) ? allTokens[i + 1] : "";
           parsed.add({
-            "white": allTokens[i],
-            "black": (i + 1 < allTokens.length) ? allTokens[i + 1] : "",
+            "white": w,
+            "black": b,
+            "white_valid": _isValidMove(w).toString(),
+            "black_valid": _isValidMove(b).toString(),
           });
         }
       }
@@ -214,94 +268,9 @@ class _ScanScreenState extends State<ScanScreen> {
     }
   }
 
-
-
-  Future<void> _saveGame() async {
-    final box = await Hive.openBox('games');
-    await box.add(_moves);
-    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-      content: Text("Game saved successfully!"),
-    ));
-  }
-
-  void _showVerificationDialog() {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        backgroundColor: const Color(0xFF37474F),
-        title: const Text("Verify Extracted Moves",
-            style: TextStyle(color: Colors.white)),
-        content: SizedBox(
-          width: double.maxFinite,
-          child: SingleChildScrollView(child: _buildMovesTable()),
-        ),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(context),
-              child:
-                  const Text("Cancel", style: TextStyle(color: Colors.amber))),
-          ElevatedButton(
-            onPressed: () async {
-              await _saveGame();
-              if (context.mounted) Navigator.pop(context);
-            },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.amber,
-              foregroundColor: Colors.black,
-            ),
-            child: const Text("Save"),
-          )
-        ],
-      ),
-    );
-  }
-
-  Widget _buildMovesTable() {
-    return Table(
-      border: TableBorder.all(color: Colors.white30),
-      defaultVerticalAlignment: TableCellVerticalAlignment.middle,
-      children: [
-        const TableRow(
-          decoration: BoxDecoration(color: Color(0xFF455A64)),
-          children: [
-            Padding(
-              padding: EdgeInsets.all(8),
-              child: Text("White",
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                      color: Colors.amber, fontWeight: FontWeight.bold)),
-            ),
-            Padding(
-              padding: EdgeInsets.all(8),
-              child: Text("Black",
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                      color: Colors.amber, fontWeight: FontWeight.bold)),
-            ),
-          ],
-        ),
-        for (var move in _moves)
-          TableRow(children: [
-            _editableCell(move, "white"),
-            _editableCell(move, "black"),
-          ]),
-      ],
-    );
-  }
-
-  Widget _editableCell(Map<String, String> move, String color) {
-    return Padding(
-      padding: const EdgeInsets.all(8),
-      child: TextFormField(
-        initialValue: move[color] ?? "",
-        onChanged: (val) => move[color] = val,
-        textAlign: TextAlign.center,
-        style: const TextStyle(color: Colors.white),
-        decoration: const InputDecoration(border: InputBorder.none),
-      ),
-    );
-  }
-
+  /// ---------------------------------------
+  /// Build UI
+  /// ---------------------------------------
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -332,16 +301,54 @@ class _ScanScreenState extends State<ScanScreen> {
                     ),
                   )
                 : Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
                     children: [
                       Expanded(
                           child: SingleChildScrollView(
                               child: Center(child: _buildMovesTable()))),
                       const SizedBox(height: 24),
+
+                      /// ---------------------------------------
+                      /// VERIFY → GO TO REPLAY SCREEN
+                      /// ---------------------------------------
                       ElevatedButton.icon(
-                        onPressed: _showVerificationDialog,
-                        icon: const Icon(Icons.check, color: Colors.black),
-                        label: const Text("Verify & Save",
+                        onPressed: () {
+                          bool hasInvalid = _moves.any((m) =>
+                              (m["white_valid"] ?? "false") == "false" ||
+                              (m["black_valid"] ?? "false") == "false");
+
+                          if (hasInvalid) {
+                            showDialog(
+                              context: context,
+                              builder: (_) => AlertDialog(
+                                backgroundColor: const Color(0xFF37474F),
+                                title: const Text("Invalid Moves Detected",
+                                    style: TextStyle(color: Colors.white)),
+                                content: const Text(
+                                  "Some moves look incorrect. Please correct highlighted cells before proceeding.",
+                                  style: TextStyle(color: Colors.white70),
+                                ),
+                                actions: [
+                                  TextButton(
+                                    onPressed: () =>
+                                        Navigator.pop(context),
+                                    child: const Text("OK",
+                                        style: TextStyle(color: Colors.amber)),
+                                  )
+                                ],
+                              ),
+                            );
+                          } else {
+                            final movesSan = _flattenMovesToSan();
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => ReplayScreen(moves: movesSan),
+                              ),
+                            );
+                          }
+                        },
+                        icon: const Icon(Icons.arrow_forward, color: Colors.black),
+                        label: const Text("Next: Replay Moves",
                             style: TextStyle(color: Colors.black)),
                         style: ElevatedButton.styleFrom(
                             backgroundColor: Colors.amber,
@@ -350,6 +357,7 @@ class _ScanScreenState extends State<ScanScreen> {
                             shape: RoundedRectangleBorder(
                                 borderRadius: BorderRadius.circular(12))),
                       ),
+
                       const SizedBox(height: 16),
                       TextButton.icon(
                         onPressed: () => _showImagePicker(append: true),
@@ -369,6 +377,80 @@ class _ScanScreenState extends State<ScanScreen> {
             style: TextStyle(color: Colors.black)),
       ),
       floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
+    );
+  }
+
+  /// ---------------------------------------
+  /// Editable table UI
+  /// ---------------------------------------
+  Widget _buildMovesTable() {
+    return Table(
+      border: TableBorder.all(color: Colors.white30),
+      defaultVerticalAlignment: TableCellVerticalAlignment.middle,
+      children: [
+        const TableRow(
+          decoration: BoxDecoration(color: Color(0xFF455A64)),
+          children: [
+            Padding(
+              padding: EdgeInsets.all(8),
+              child: Text("White",
+                  textAlign: TextAlign.center,
+                  style:
+                      TextStyle(color: Colors.amber, fontWeight: FontWeight.bold)),
+            ),
+            Padding(
+              padding: EdgeInsets.all(8),
+              child: Text("Black",
+                  textAlign: TextAlign.center,
+                  style:
+                      TextStyle(color: Colors.amber, fontWeight: FontWeight.bold)),
+            ),
+          ],
+        ),
+        for (var move in _moves)
+          TableRow(children: [
+            _editableCell(move, "white"),
+            _editableCell(move, "black"),
+          ]),
+      ],
+    );
+  }
+
+  Widget _editableCell(Map<String, String> move, String color) {
+    final value = move[color] ?? "";
+    final validFlag = move["${color}_valid"] ?? "false";
+    final isValid = validFlag == "true";
+
+    return Padding(
+      padding: const EdgeInsets.all(8),
+      child: TextFormField(
+        initialValue: value,
+        onChanged: (val) {
+          move[color] = val;
+          move["${color}_valid"] = _isValidMove(val).toString();
+          setState(() {});
+        },
+        textAlign: TextAlign.center,
+        style: const TextStyle(color: Colors.white),
+        decoration: InputDecoration(
+          enabledBorder: isValid
+              ? InputBorder.none
+              : OutlineInputBorder(
+                  borderSide: const BorderSide(color: Colors.red, width: 2),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+          focusedBorder: isValid
+              ? InputBorder.none
+              : OutlineInputBorder(
+                  borderSide: const BorderSide(color: Colors.red, width: 2.5),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+          filled: true,
+          fillColor: Colors.transparent,
+          contentPadding:
+              const EdgeInsets.symmetric(horizontal: 8.0, vertical: 12.0),
+        ),
+      ),
     );
   }
 }
