@@ -15,6 +15,9 @@ dependencies:
   hive: ^2.2.3
   hive_flutter: ^1.1.0
 
+  # Image picker
+  image_picker: ^1.1.2
+
   # Chess logic + PGN
   dartchess: ^0.11.1
 
@@ -26,6 +29,16 @@ dependencies:
 
   # Image processing (pre-OCR cleanup)
   image: ^4.2.2
+
+  # Font Awesome
+  font_awesome_flutter: ^10.7.0
+
+  # OCR - Google ML Kit for text recognition
+  google_mlkit_text_recognition: ^0.15.0
+
+  # Image Cropping
+  image_cropper: ^8.0.2
+
 
 
 
@@ -39,3 +52,6 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+
+  assets:
+    - assets/sample_scoresheet.png
