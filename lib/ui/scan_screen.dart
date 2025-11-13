@@ -5,8 +5,8 @@ import 'package:image_cropper/image_cropper.dart';
 import 'package:google_mlkit_text_recognition/google_mlkit_text_recognition.dart';
 import 'package:hive/hive.dart';
 import 'package:knights_journal/ui/replay_screen.dart';
-
-
+import 'package:knights_journal/ui/home_screen.dart';
+import 'package:knights_journal/models/game_model.dart';
 
 class ScanScreen extends StatefulWidget {
   const ScanScreen({super.key});
@@ -193,8 +193,7 @@ class _ScanScreenState extends State<ScanScreen> {
         final tokens = text
             .split(RegExp(r'\s+'))
             .where((t) => t.trim().isNotEmpty)
-            .map((t) =>
-                t.replaceAll(RegExp(r'[^\wO0\-\+\#=\.]'), ''))
+            .map((t) => t.replaceAll(RegExp(r'[^\wO0\-\+\#=\.]'), ''))
             .where((t) => t.trim().isNotEmpty)
             .toList();
 
@@ -276,7 +275,8 @@ class _ScanScreenState extends State<ScanScreen> {
     return Scaffold(
       backgroundColor: const Color(0xFF263238),
       appBar: AppBar(
-        title: const Text("Scan Scoresheet", style: TextStyle(color: Colors.white)),
+        title:
+            const Text("Scan Scoresheet", style: TextStyle(color: Colors.white)),
         backgroundColor: const Color(0xFF37474F),
       ),
       body: Padding(
@@ -308,10 +308,10 @@ class _ScanScreenState extends State<ScanScreen> {
                       const SizedBox(height: 24),
 
                       /// ---------------------------------------
-                      /// VERIFY → GO TO REPLAY SCREEN
+                      /// VERIFY → GO TO REPLAY SCREEN (UNSAVED MODE)
                       /// ---------------------------------------
                       ElevatedButton.icon(
-                        onPressed: () {
+                        onPressed: () async {
                           bool hasInvalid = _moves.any((m) =>
                               (m["white_valid"] ?? "false") == "false" ||
                               (m["black_valid"] ?? "false") == "false");
@@ -329,8 +329,7 @@ class _ScanScreenState extends State<ScanScreen> {
                                 ),
                                 actions: [
                                   TextButton(
-                                    onPressed: () =>
-                                        Navigator.pop(context),
+                                    onPressed: () => Navigator.pop(context),
                                     child: const Text("OK",
                                         style: TextStyle(color: Colors.amber)),
                                   )
@@ -339,12 +338,27 @@ class _ScanScreenState extends State<ScanScreen> {
                             );
                           } else {
                             final movesSan = _flattenMovesToSan();
-                            Navigator.push(
+
+                            // Open ReplayScreen in UNSAVED mode:
+                            final result = await Navigator.push(
                               context,
                               MaterialPageRoute(
-                                builder: (_) => ReplayScreen(moves: movesSan),
+                                builder: (_) => ReplayScreen(
+                                  game: null, // unsaved
+                                  index: null,
+                                  movesFromScan: movesSan,
+                                ),
                               ),
                             );
+
+                            // If user saved from metadata → go to Home and refresh
+                            if (result != null && result['saved'] == true) {
+                              Navigator.of(context).pushAndRemoveUntil(
+                                MaterialPageRoute(
+                                    builder: (_) => const HomeScreen()),
+                                (route) => false,
+                              );
+                            }
                           }
                         },
                         icon: const Icon(Icons.arrow_forward, color: Colors.black),

@@ -1,14 +1,17 @@
 import 'package:flutter/material.dart';
 import 'package:hive_flutter/hive_flutter.dart';
+
 import 'models/game_model.dart';
 import 'services/storage_service.dart';
 import 'ui/home_screen.dart';
-import 'utils/theme.dart';
-
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Initialize Hive
   await Hive.initFlutter();
+
+  // Register adapter + open boxes
   await StorageService.init();
 
   runApp(const KnightsJournalApp());
@@ -26,6 +29,7 @@ class KnightsJournalApp extends StatelessWidget {
         useMaterial3: false,
         scaffoldBackgroundColor: const Color(0xFF263238),
         primaryColor: Colors.amber,
+
         appBarTheme: const AppBarTheme(
           backgroundColor: Color(0xFF37474F),
           elevation: 0,
@@ -38,13 +42,13 @@ class KnightsJournalApp extends StatelessWidget {
           ),
           iconTheme: IconThemeData(color: Colors.amber),
         ),
-        dialogTheme: const DialogThemeData( // ✅ fixed line
+
+        dialogTheme: const DialogThemeData(
           backgroundColor: Color(0xFF37474F),
           titleTextStyle: TextStyle(
             color: Colors.white,
             fontSize: 20,
             fontWeight: FontWeight.w600,
-            letterSpacing: 0.5,
           ),
           contentTextStyle: TextStyle(
             color: Colors.white70,
@@ -54,6 +58,7 @@ class KnightsJournalApp extends StatelessWidget {
             borderRadius: BorderRadius.all(Radius.circular(12)),
           ),
         ),
+
         textTheme: const TextTheme(
           bodyLarge: TextStyle(color: Colors.white70, fontSize: 16, height: 1.4),
           bodyMedium: TextStyle(color: Colors.white70, fontSize: 14),
@@ -61,9 +66,9 @@ class KnightsJournalApp extends StatelessWidget {
           labelLarge: TextStyle(
             color: Colors.black,
             fontWeight: FontWeight.bold,
-            letterSpacing: 0.2,
           ),
         ),
+
         elevatedButtonTheme: ElevatedButtonThemeData(
           style: ElevatedButton.styleFrom(
             backgroundColor: Colors.amber,
@@ -77,9 +82,10 @@ class KnightsJournalApp extends StatelessWidget {
             ),
           ),
         ),
+
         snackBarTheme: const SnackBarThemeData(
           backgroundColor: Colors.amber,
-          contentTextStyle: TextStyle(color: Colors.black, fontWeight: FontWeight.w500),
+          contentTextStyle: TextStyle(color: Colors.black),
           behavior: SnackBarBehavior.floating,
         ),
       ),
